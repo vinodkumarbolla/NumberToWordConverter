@@ -1,0 +1,45 @@
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
+
+@Configuration
+public class CustomRestTemplateConfig {
+
+    @Value("${ssl.truststore.path}")
+    private String trustStorePath;
+
+    @Value("${ssl.truststore.password}")
+    private String trustStorePassword;
+
+    @Bean
+    public RestTemplate restTemplate() throws Exception {
+        return new RestTemplate(clientHttpRequestFactory());
+    }
+
+    private ClientHttpRequestFactory clientHttpRequestFactory() throws Exception {
+        return new SimpleClientHttpRequestFactory() {
+            @Override
+            protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
+                if (connection instanceof HttpsURLConnection) {
+                    HttpsURLConnection httpsConnection = (HttpsURLConnection) connection;
+                    try (InputStream trustStoreStream = new FileInputStream(trustStorePath)) {
+                        KeyStore trustStore = KeyStore.getInstance("JKS");
+                        trustStore.load(trustStoreStream, trustStorePassword.toCharArray());
+
+                        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                        trustManagerFactory.init(trustStore);
+
+                        SSLContext sslContext = SSLContext.getInstance("TLS");
+                        sslContext.init(null, trustManagerFactory.getTrustManagers(), new SecureRandom());
+
+                        httpsConnection.setSSLSocketFactory(sslContext.getSocketFactory());
+                    }
+                }
+                super.prepareConnection(connection, httpMethod);
+            }
+        };
+    }
+}
